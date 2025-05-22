@@ -1,16 +1,14 @@
 <?php
+declare(strict_types=1);
 
 /**
- * Pimcore
- *
- * This source file is available under two different licenses:
- * - GNU General Public License version 3 (GPLv3)
- * - Pimcore Commercial License (PCL)
+ * This source file is available under the terms of the
+ * Pimcore Open Core License (POCL)
  * Full copyright and license information is available in
  * LICENSE.md which is distributed with this source code.
  *
- *  @copyright  Copyright (c) Pimcore GmbH (http://www.pimcore.org)
- *  @license    http://www.pimcore.org/license     GPLv3 and PCL
+ *  @copyright  Copyright (c) Pimcore GmbH (https://www.pimcore.com)
+ *  @license    Pimcore Open Core License (POCL)
  */
 
 namespace Pimcore\Bundle\AdminBundle\Helper;
@@ -345,29 +343,42 @@ class GridHelperService
                             $conditionPartsFilters[] = $field->getFilterCondition($filter['value'] ?? null, $operator, ['brickPrefix' => ($tablePrefix ? $tablePrefix . '.' : null)]);
                         }
                     } elseif (in_array($filterField, $systemFields)) {
-                        // system field
-                        $lowerCasedFilterValue = strtolower($filter['value']); // lowercase for case insensitive search
-                        $lowerCasedFilterValue = str_replace('*', '%', $lowerCasedFilterValue); // replace wildcard
+                        // system fields
+                        $filterValue = $filter['value'];
+                        if (is_string($filterValue)) {
+                            $filterValue = strtolower($filterValue); // lowercase for case-insensitive search
+                            $filterValue = str_replace('*', '%', $filterValue); // replace wildcard
+                        }
                         if ($filterField == 'fullpath') {
-                            $conditionPartsFilters[] = 'concat(lower(`path`), lower(`key`)) ' . $operator . ' ' . $db->quote('%' . $lowerCasedFilterValue . '%');
+                            $conditionPartsFilters[] = 'concat(lower(`path`), lower(`key`)) ' . $operator . ' ' . $db->quote('%' . $filterValue . '%');
                         } elseif ($filterField == 'key') {
-                            $conditionPartsFilters[] = 'lower(`key`) ' . $operator . ' ' . $db->quote('%' . $lowerCasedFilterValue . '%');
+                            $conditionPartsFilters[] = 'lower(`key`) ' . $operator . ' ' . $db->quote('%' . $filterValue . '%');
                         } elseif ($filterField == 'id' && $operator !== 'in') {
-                            $conditionPartsFilters[] = 'oo_id ' . $operator . ' ' . $db->quote($filter['value']);
+                            $conditionPartsFilters[] = 'oo_id ' . $operator . ' ' . $filterValue;
                         } elseif ($filterField == 'id' && $operator === 'in') {
-                            $conditionPartsFilters[] = 'oo_id ' . $operator . ' (' . $filter['value'] . ')';
+                            $conditionPartsFilters[] = 'oo_id ' . $operator . ' (' . $filterValue . ')';
                         } else {
                             $filterField = $db->quoteIdentifier($filterField);
                             if ($filter['type'] == 'date' && $operator == '=') {
                                 //if the equal operator is chosen with the date type, condition has to be changed
-                                $maxTime = $filter['value'] + (86400 - 1); //specifies the top point of the range used in the condition
-                                $conditionPartsFilters[] = $filterField . ' BETWEEN ' . $db->quote($filter['value']) . ' AND ' . $db->quote($maxTime);
+                                $maxTime = $filterValue + (86400 - 1); //specifies the top point of the range used in the condition
+                                $conditionPartsFilters[] = sprintf(
+                                    '%s BETWEEN %s AND %s',
+                                    $filterField,
+                                    is_string($filterValue) ? $db->quote($filterValue) : $filterValue,
+                                    $maxTime
+                                );
                             } else {
                                 // @see \Pimcore\Model\DataObject\ClassDefinition\Data\Checkbox::getFilterConditionExt()
                                 if ($filter['type'] === 'boolean') {
                                     $filterField = 'IFNULL(' . $filterField . ', 0)';
                                 }
-                                $conditionPartsFilters[] = $filterField . ' ' . $operator . ' ' . $db->quote($filter['value']);
+                                $conditionPartsFilters[] = sprintf(
+                                    '%s %s %s',
+                                    $filterField,
+                                    $operator,
+                                    is_string($filterValue) ? $db->quote($filterValue) : $filterValue
+                                );
                             }
                         }
                     }
@@ -535,7 +546,6 @@ class GridHelperService
         $orderKey = 'id';
         $order = 'ASC';
 
-        $fields = [];
         $bricks = [];
         if (!empty($requestParams['fields'])) {
             $fields = $requestParams['fields'];
@@ -543,10 +553,10 @@ class GridHelperService
         }
 
         if (isset($requestParams['limit'])) {
-            $limit = $requestParams['limit'];
+            $limit = (int)$requestParams['limit'];
         }
         if (isset($requestParams['start'])) {
-            $start = $requestParams['start'];
+            $start = (int)$requestParams['start'];
         }
 
         $sortingSettings = \Pimcore\Bundle\AdminBundle\Helper\QueryParams::extractSortingSettings($requestParams);
@@ -737,10 +747,10 @@ class GridHelperService
         $order = 'ASC';
 
         if (isset($allParams['limit'])) {
-            $limit = $allParams['limit'];
+            $limit = (int)$allParams['limit'];
         }
         if (isset($allParams['start'])) {
-            $start = $allParams['start'];
+            $start = (int)$allParams['start'];
         }
 
         $orderKeyQuote = true;
@@ -803,7 +813,8 @@ class GridHelperService
                         $operator = 'BETWEEN';
                         //if the equal operator is chosen with the date type, condition has to be changed
                         $maxTime = $filter['value'] + (86400 - 1); //specifies the top point of the range used in the condition
-                        $filter['value'] = $db->quote($filter['value']) . ' AND ' . $db->quote($maxTime);
+                        $filter['value'] =
+                            $db->quote((string)$filter['value']) . ' AND ' . $db->quote((string)$maxTime);
                     }
                 } elseif ($filterType == 'list') {
                     $operator = 'IN';
@@ -825,7 +836,7 @@ class GridHelperService
                     $value = '(' . implode(',', $quoted) . ')';
                 } elseif ($operator == 'BETWEEN') {
                 } else {
-                    $value = $db->quote($value);
+                    $value = $db->quote((string)$value);
                 }
 
                 if (isset($filterDef[1]) && $filterDef[1] == 'system') {
@@ -852,16 +863,20 @@ class GridHelperService
 
         //filtering for tags
         if (!empty($allParams['tagIds'])) {
-            $tagIds = $allParams['tagIds'];
-            foreach ($tagIds as $tagId) {
+            foreach ($allParams['tagIds'] as $tagId) {
+                $tagId = (int) $tagId;
                 if ($allParams['considerChildTags'] ?? false) {
                     $tag = Model\Element\Tag::getById($tagId);
                     if ($tag) {
                         $tagPath = $tag->getFullIdPath();
-                        $conditionFilters[] = 'id IN (SELECT cId FROM `tags_assignment` INNER JOIN `tags` ON tags.id = tags_assignment.tagid WHERE `ctype` = "asset" AND (`id` = ' .(int)$tagId. ' OR `idPath` LIKE ' . $db->quote($tagPath . '%') . '))';
+                        $conditionFilters[] =
+                            'id IN (SELECT cId FROM `tags_assignment` INNER JOIN `tags` ON
+                            tags.id = tags_assignment.tagid WHERE `ctype` = "asset"
+                            AND (`id` = ' .$tagId. ' OR `idPath` LIKE ' . $db->quote($tagPath . '%') . '))';
                     }
                 } else {
-                    $conditionFilters[] = 'id IN (SELECT cId FROM `tags_assignment` WHERE `ctype` = "asset" AND tagid = ' .(int)$tagId. ')';
+                    $conditionFilters[] =
+                        'id IN (SELECT cId FROM `tags_assignment` WHERE `ctype` = "asset" AND tagid = ' .$tagId. ')';
                 }
             }
         }
@@ -926,14 +941,20 @@ class GridHelperService
     /**
      * A more performant alternative to "CONCAT(`path`,`key`) LIKE $fullpath"
      */
-    private function optimizedConcatLike(string $fullpath): string
+    private function optimizedConcatLike(string $fullpath, string $type = 'object'): string
     {
+        //special case for the root folder
+        if ($fullpath === '/') {
+            return '`path` LIKE "/%"';
+        }
+
         $pathParts = explode('/', $fullpath);
         $leaf = array_pop($pathParts);
         $path = implode('/', $pathParts);
+        $queryColumn = $type === 'asset' ? '`filename`' : '`key`';
 
         return '(
-            (`path` = "' . $path . '/" AND `key` = "' . $leaf . '")
+            (`path` = "' . $path . '/" AND ' . $queryColumn .  ' = "' . $leaf . '")
             OR
             `path` LIKE "' . $fullpath . '/%"
         )';
@@ -943,18 +964,22 @@ class GridHelperService
      * A more performant alternative to "CONCAT(`path`,`key`) NOT LIKE $fullpath"
      * Set $onlyChildren to true when you want to exclude the folder/element itself
      */
-    private function optimizedConcatNotLike(string $fullpath, bool $onlyChildren = false): string
-    {
+    private function optimizedConcatNotLike(
+        string $fullpath,
+        bool $onlyChildren = false,
+        string $type = 'object'
+    ): string {
         $pathParts = explode('/', $fullpath);
         $leaf = array_pop($pathParts);
         $path = implode('/', $pathParts);
+        $queryColumn = $type === 'asset' ? '`filename`' : '`key`';
 
         if ($onlyChildren) {
             return '`path` NOT LIKE "' . $fullpath . '/%"';
         }
 
         return '(
-            (`path` != "' . $path . '/" AND `key` != "' . $leaf . '")
+            NOT (`path` = "' . $path . '/" AND ' . $queryColumn .  ' = "' . $leaf . '")
             AND
             `path` NOT LIKE "' . $fullpath . '/%"
         )';
@@ -966,7 +991,7 @@ class GridHelperService
      *
      * @internal
      */
-    protected function getPermittedPathsByUser(string $type, User $user): string
+    public function getPermittedPathsByUser(string $type, User $user): string
     {
         $allowedTypes = [];
 
@@ -983,27 +1008,29 @@ class GridHelperService
                         if ($exceptionsConcat !== '') {
                             $exceptionsConcat.= ' OR ';
                         }
-                        $exceptionsConcat.= $this->optimizedConcatLike($path);
+                        $exceptionsConcat.= $this->optimizedConcatLike($path, $type);
                     }
                     $exceptions = ' OR (' . $exceptionsConcat . ')';
                     //if any allowed child is found, the current folder can be listed but its content is still blocked
                     $onlyChildren = true;
                 }
-                $forbiddenPathSql[] = $this->optimizedConcatNotLike($forbiddenPath, $onlyChildren) . $exceptions;
+                $forbiddenPathSql[] =
+                    '(' . $this->optimizedConcatNotLike($forbiddenPath, $onlyChildren, $type) . $exceptions . ')'
+                ;
             }
             foreach ($elementPaths['allowed'] as $allowedPaths) {
-                $allowedPathSql[] = $this->optimizedConcatLike($allowedPaths);
+                $allowedPathSql[] = $this->optimizedConcatLike($allowedPaths, $type);
             }
 
             // this is to avoid query error when implode is empty.
             // the result would be like `(((path1 OR path2) AND (not_path3 AND not_path4)))`
             $forbiddenAndAllowedSql = '(';
 
-            if ($allowedPathSql || $forbiddenPathSql) {
+            if (!empty($allowedPathSql) || !empty($forbiddenPathSql)) {
                 $forbiddenAndAllowedSql .= '(';
                 $forbiddenAndAllowedSql .= $allowedPathSql ? '( ' . implode(' OR ', $allowedPathSql) . ' )' : '';
 
-                if ($forbiddenPathSql) {
+                if (!empty($forbiddenPathSql)) {
                     //if $allowedPathSql "implosion" is present, we need `AND` in between
                     $forbiddenAndAllowedSql .= $allowedPathSql ? ' AND ' : '';
                     $forbiddenAndAllowedSql .= implode(' AND ', $forbiddenPathSql);
